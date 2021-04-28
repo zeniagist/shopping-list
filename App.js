@@ -1,9 +1,10 @@
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
-import { StyleSheet, Text, View, FlatList } from 'react-native';
+import { StyleSheet, Text, View, FlatList, Button } from 'react-native';
 // Firebase
-import firebase from 'firebase/app';
-import 'firebase/firestore';
+const firebase = require('firebase');
+require('firebase/firestore');
+require('firebase/auth')
 
 
 export default class App extends React.Component {
@@ -11,6 +12,8 @@ export default class App extends React.Component {
     super();
     this.state = {
       lists: [],
+      uid: 0,
+      loggedInText: 'Please wait, you are getting logged in',
     };
 
     // config Firebase
@@ -29,24 +32,16 @@ export default class App extends React.Component {
       firebase.initializeApp(firebaseConfig);
     }
     // Initialize Firebase
-    this.referenceShoppingLists = firebase.firestore().collection("shoppinglist");
+    this.referenceShoppinglistUser = firebase.firestore().collection('shoppinglists').where("uid", "==", this.state.uid);
   }
 
-  componentDidMount() {
-    this.referenceShoppingLists = firebase.firestore().collection('shoppinglists');
-    this.unsubscribe = this.referenceShoppingLists.onSnapshot(this.onCollectionUpdate)
-  }
-
-  componentWillUnmount() {
-    this.unsubscribe();
-  }
-
+  // update Firebase collection data
   onCollectionUpdate = (querySnapshot) => {
     const lists = [];
     // go through each document
     querySnapshot.forEach((doc) => {
       // get the QueryDocumentSnapshot's data
-      var data = doc.data();
+      let data = doc.data();
       lists.push({
         name: data.name,
         items: data.items.toString(),
@@ -55,25 +50,73 @@ export default class App extends React.Component {
     this.setState({
       lists,
     });
-  };
+  }
+
+  addList() {
+    // add a new list to the collection
+    this.referenceShoppingLists.add({
+      name: 'TestList',
+      items: ['eggs', 'pasta', 'veggies'],
+      uid: this.state.uid,
+    });
+  }
+
+  // load Firebase collection data onload
+  componentDidMount() {
+    // creating a references to shoppinglists collection
+    this.referenceShoppingLists = firebase.firestore().collection('shoppinglists');
+
+    // listen to authentication events
+    this.authUnsubscribe = firebase.auth().onAuthStateChanged(async (user) => {
+      if (!user) {
+        await firebase.auth().signInAnonymously();
+      }
+      //update user state with currently active user data
+      this.setState({
+        uid: user.uid,
+        loggedInText: 'Hello there',
+      });
+
+      // create a reference to the active user's documents (shopping lists)
+      this.referenceShoppinglistUser = firebase.firestore().collection('shoppinglists').where("uid", "==", this.state.uid);
+      // listen for collection changes for current user 
+      this.unsubscribeListUser = this.referenceShoppinglistUser.onSnapshot(this.onCollectionUpdate);
+
+
+
+    });
+  }
+
+  // stop receiving Firebase collection data
+  componentWillUnmount() {
+    this.unsubscribe = this.referenceShoppingLists.onSnapshot(this.onCollectionUpdate)
+    // listen for collection changes for current user
+    this.unsubscribeListUser = this.referenceShoppinglistUser.onSnapshot(this.onCollectionUpdate);
+  }
 
   render() {
     return (
       <View style={styles.container}>
-        <Text style={styles.text} >All Shoppling Lists</Text>
+        <Text>{this.state.loggedInText}</Text>
+        <Text style={styles.text} >All Shopping Lists</Text>
         <FlatList
           data={this.state.lists}
           renderItem={({ item }) =>
             <Text style={styles.item} >{item.name}: {item.items}</Text>}
+          keyExtractor={(item, index) => index.toString()}
         />
-        <StatusBar style="auto" />
+        <View style={{ backgroundColor: 'blue' }}>
+          <Button
+            onPress={() => this.addList()}
+            title='Add Something'
+            color='white'
+          ></Button>
+        </View>
       </View>
     );
   }
 
 }
-
-
 
 const styles = StyleSheet.create({
   container: {
